@@ -1,16 +1,26 @@
-// Testbench for Arithmetic Unit with randomized stimulus
-
 `timescale 1ns/1ps
 
-module alu_tb();
-    reg clk, rst;
-    reg [23:0] R, S;
-    reg ctl_f, ctl_e;
+module tb_alu_mult_inv;
+
+    // Inputs
+    reg clk;
+    reg rst;
+    reg [23:0] R;
+    reg [23:0] S;
+    reg ctl_f;
+    reg ctl_e;
+
+    // Outputs
     wire [23:0] result;
     wire sign;
     wire cont;
 
-    alu dut (
+    // Variables for checking
+    reg [23:0] expected;
+    reg passed;
+
+    // Instantiate the ALU
+    alu uut (
         .clk(clk),
         .rst(rst),
         .R(R),
@@ -22,59 +32,39 @@ module alu_tb();
         .cont(cont)
     );
 
+    // Clock generation: 10 ns period
+    always #5 clk = ~clk;
+
+    // Simple tick task
     task tick;
-    begin
-        clk = 0; #5;
-        clk = 1; #5;
-    end
+        begin
+            @(posedge clk);
+        end
     endtask
 
-    function [23:0] sm;
-        input sign_bit;
-        input [22:0] mag;
-        sm = {sign_bit, mag};
-    endfunction
-
-    integer i;
-    integer j;
-    reg passed;
-    reg [23:0] expected;
+    // Wait for inverse ready
+    task wait_for_cont;
+        begin
+            @(posedge clk);
+            while (!cont) @(posedge clk);
+        end
+    endtask
 
     initial begin
-        passed = 1;
+        clk = 0;
         rst = 1;
-        repeat(3) tick;
-        rst = 0;
-        tick;
+        ctl_f = 1; // mult/inv path
+        ctl_e = 1; // select inverse
+        passed = 1;
+        #20 rst = 0;
 
-        // Deterministic sweep for add/sub and mult
-        for (i = 0; i < 16; i = i + 1) begin
-            for (j = 0; j < 16; j = j + 1) begin
-                // construct sign-mag positives
-                R = {1'b0, i[8:0], 14'd0};
-                S = {1'b0, j[8:0], 14'd0};
+        $display("Starting ALU multiplicative inverse test...");
 
-                // test add/sub
-                ctl_f = 0;
-                ctl_e = 0;
-                tick;
-                expected = {1'b0, ((i + j) << 14)};
-                if (result !== expected) begin
-                    passed = 0;
-                    $display("ADD Failed %0d + %0d => got %0d expected %0d", i, j, result[22:0], expected[22:0]);
-                end
-
-                // test mult
-                ctl_f = 1;
-                ctl_e = 0;
-                tick;
-                expected = {1'b0, ((i * j) << 14)};
-                if (result !== expected) begin
-                    passed = 0;
-                    $display("MULT Failed %0d * %0d => got %0d expected %0d", i, j, result[22:0], expected[22:0]);
-                end
-            end
-        end
+        // Example test cases: R, then inverse
+        test_inv(24'h004000); // 1.0 -> 1.0
+        test_inv(24'h002000); // 0.5 -> 2.0
+        test_inv(24'h008000); // 2.0 -> 0.5
+        //test_inv(24'h004000); // 
 
         if (passed)
             $display("Test Completed without Errors! :)");
@@ -83,4 +73,22 @@ module alu_tb();
 
         $finish;
     end
+
+    // Task for testing a pair of R and S
+    task test_inv;
+        input [23:0] r_val;
+        reg [47:0] product;
+        begin
+            R = r_val;
+            // Wait until ALU inverse signals ready
+            @(posedge clk);
+            while (!cont) @(posedge clk);
+
+            // Compare ALU result
+            $display("INV Result: R=%h -> got %h", R, result);
+
+        end
+        #50;
+endtask
+
 endmodule

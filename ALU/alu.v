@@ -121,44 +121,30 @@ endmodule
 module multiplicative_inverse (
     input  wire        clk,
     input  wire        rst,
-    input  wire [23:0] m,
-    output reg [23:0]  i,
+    input  wire [47:0] m,    // input operand (S9.14, sign-magnitude)
+    output reg  [23:0] i,    // output reciprocal (S9.14, sign-magnitude)
     output reg         rdy
 );
-    reg [23:0] trial;
-    reg [5:0]  bitpos;
-    reg busy;
-
-    wire [47:0] test_mul = trial * m[22:0];
-    wire geq_one = test_mul[47:24] >= 24'h000001;
+    reg bit_pos;
 
     always @(posedge clk or posedge rst) begin
-        if (rst) begin
-            i <= 0;
-            trial <= 0;
-            bitpos <= 0;
-            rdy <= 0;
-            busy <= 0;
-        end else begin
+        $display("Inverse Step: m=%h, i=%h, bit_pos=%d", m, i, bit_pos);
 
-            if (!busy) begin
-                trial <= 0;
-                bitpos <= 23;
-                rdy <= 0;
-                busy <= 1;
+        if (rst) begin
+            i <= 24'b0;
+            bit_pos <= 23;
+            rdy <= 0;
+        end else begin
+            if (bit_pos == 0) begin
+                rdy <= 1;
             end else begin
-                if (bitpos == 6'd63) begin
-                    i <= trial;
-                    rdy <= 1;
-                    busy <= 0;
-                end else begin
-                    trial <= trial | (24'h1 << bitpos);
-                    if (geq_one) begin
-                        trial <= trial & ~(24'h1 << bitpos);
-                    end
-                    bitpos <= bitpos - 1;
+                i[bit_pos] <= 1'b1;
+                if (m > 24'h004000) begin // 1 in Q9.14
+                    i[bit_pos] <= 1'b0;
                 end
-            end
+                bit_pos <= bit_pos - 1;
         end
     end
+end
+
 endmodule
