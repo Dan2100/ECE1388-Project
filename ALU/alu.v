@@ -92,15 +92,20 @@ module multiplier (
     input  wire [23:0] y,
     output wire [47:0] m
 );
-    wire sign = x[23] ^ y[23];
-    wire [22:0] xm = x[22:0];
-    wire [22:0] ym = y[22:0];
+    // Separate sign and magnitude
+    wire sign_x = x[23];
+    wire sign_y = y[23];
+    wire [22:0] mag_x = x[22:0];
+    wire [22:0] mag_y = y[22:0];
 
-    wire [45:0] mul_mag = xm * ym;
+    // Multiply magnitudes (full precision)
+    wire [45:0] full_product = mag_x * mag_y;
 
-    // produce a 48-bit vector: [47]=sign, [46:1]=mul_mag, [0]=0 (LSB padding)
-    // keeps widths consistent when upper 24 bits are later selected (mult_out[47:24])
-    assign m = {sign, mul_mag, 1'b0};
+    // Scale back to Q9.14 by shifting right 14 bits
+    wire [31:0] scaled = full_product >> 14;
+
+    // Combine sign and scaled magnitude (24-bit result)
+    assign m = { (sign_x ^ sign_y), scaled[22:0], 24'b0 };
 endmodule
 
 // ------------------------------------------------------
@@ -117,9 +122,7 @@ module multiplicative_inverse (
     reg [5:0]  bitpos;
     reg busy;
 
-    // candidate sets the current trial bit for testing
-    wire [23:0] candidate = trial | (24'h1 << bitpos);
-    wire [47:0] test_mul = candidate * m[22:0];
+    wire [47:0] test_mul = trial * m[22:0];
     wire geq_one = test_mul[47:24] >= 24'h000001;
 
     always @(posedge clk or posedge rst) begin
@@ -130,21 +133,22 @@ module multiplicative_inverse (
             rdy <= 0;
             busy <= 0;
         end else begin
+
             if (!busy) begin
                 trial <= 0;
                 bitpos <= 23;
                 rdy <= 0;
                 busy <= 1;
             end else begin
-                // process current bit position; when bitpos==0 this is the last iteration
-                if (!geq_one) begin
-                    trial <= candidate;
-                end
-                if (bitpos == 6'd0) begin
+                if (bitpos == 6'd63) begin
                     i <= trial;
                     rdy <= 1;
                     busy <= 0;
                 end else begin
+                    trial <= trial | (24'h1 << bitpos);
+                    if (geq_one) begin
+                        trial <= trial & ~(24'h1 << bitpos);
+                    end
                     bitpos <= bitpos - 1;
                 end
             end

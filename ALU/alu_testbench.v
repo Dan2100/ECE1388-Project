@@ -37,44 +37,10 @@ module alu_tb();
 
     integer i;
     integer j;
-
-    initial begin
-        clk = 0;
-        rst = 1;
-        ctl_f = 0;
-        ctl_e = 0;
-        R = 0;
-        S = 0;
-
-        repeat(3) tick;
-        rst = 0;
-        tick;
-
-        // Randomized tests
-        for (i = 0; i < 20; i = i + 1) begin
-            R = sm($random % 2, $random % (1<<23));
-            S = sm($random % 2, $random % (1<<23));
-            ctl_f = $random % 2;
-            ctl_e = $random % 2;
-            tick;
-        end
-
-        // Test inverse path explicitly
-        R = sm(0, 23'd20000);
-        S = sm(0, 23'd3000);
-        ctl_f = 0;
-        ctl_e = 0;
-        tick;
-
-        wait(cont == 1);
-        tick;
-
-        $finish;
-    end
     reg passed;
     reg [23:0] expected;
 
-    initial begin : init
+    initial begin
         passed = 1;
         rst = 1;
         repeat(3) tick;
@@ -85,27 +51,27 @@ module alu_tb();
         for (i = 0; i < 16; i = i + 1) begin
             for (j = 0; j < 16; j = j + 1) begin
                 // construct sign-mag positives
-                R = {1'b0, i[22:0]};
-                S = {1'b0, j[22:0]};
+                R = {1'b0, i[8:0], 14'd0};
+                S = {1'b0, j[8:0], 14'd0};
 
                 // test add/sub
                 ctl_f = 1;
                 ctl_e = 0;
                 tick;
-                expected = {1'b0,(i+j)};
+                expected = {1'b0, ((i + j) << 14)};
                 if (result !== expected) begin
                     passed = 0;
-                    $display("ADD Failed %d + %d => got %d", i, j, result[22:0]);
+                    $display("ADD Failed %0d + %0d => got %0d expected %0d", i, j, result[22:0], expected[22:0]);
                 end
 
                 // test mult
                 ctl_f = 0;
                 ctl_e = 0;
                 tick;
-                expected = {1'b0,(i*j)};
+                expected = {1'b0, ((i * j) << 14)};
                 if (result !== expected) begin
                     passed = 0;
-                    $display("MULT Failed %d * %d => got %d", i, j, result[22:0]);
+                    $display("MULT Failed %0d * %0d => got %0d expected %0d", i, j, result[22:0], expected[22:0]);
                 end
             end
         end
