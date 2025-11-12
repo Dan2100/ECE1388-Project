@@ -21,7 +21,10 @@ module alu (
 
     wire [23:0] add_out;
     wire [47:0] mult_out;
+    wire [23:0] mult_inv_out;
+    wire [23:0] mult_inv_out_sign;
     wire [23:0] inv_out;
+    wire [23:0] Y;
     wire        inv_rdy;
 
     wire sign_r = R[23];
@@ -31,42 +34,48 @@ module alu (
     adder_subs u_add (
         .x(R),
         .y(S),
-        .op(ctl_f),
+        .op(~ctl_f),
         .sr(add_out)
     );
 
     multiplier u_mult (
         .x(R),
-        .y(S),
+        .y(Y),
         .m(mult_out)
     );
 
     multiplicative_inverse u_inv (
         .clk(clk),
         .rst(rst),
-        .m(mult_out[47:24]),
+        .m(mult_out),
         .i(inv_out),
         .rdy(inv_rdy)
     );
 
-    assign result = ctl_f ? add_out : mult_out[47:24];
-    assign sign   = ctl_f ? sign_xor : sign_r;
-    assign cont = inv_rdy | ctl_e;
+    assign ctrl_nand = ~(ctl_e & ctl_f);
+    assign Y = ctrl_nand ? S : inv_out; // mux for Y input
+
+    assign mult_inv_out = ctl_e ? inv_out : mult_out[47:24]; // mux for mult vs inv
+    assign sign_out = ctrl_nand ? sign_xor : sign_s; // mux for sign output
+    assign mult_inv_out_sign = {sign_out, mult_inv_out}; // combine with sign mux
+
+    assign result = ctl_f ? mult_inv_out_sign : add_out; // mux for add vs mult/inv
+    assign cont = inv_rdy | ctrl_nand; // continue signal for inv only
 
 endmodule
 
 // ------------------------------------------------------
 // Adder/Subtractor
-// ------------------------------------------------------
+// -----------------------------------------------------
 module adder_subs (
     input  wire [23:0] x,
     input  wire [23:0] y,
     input  wire        op,
-    output reg  [23:0] sr
+    output wire  [23:0] sr
 );
     wire sx = x[23];
     wire sy = y[23];
-    wire [23:0] y_eff = (op ? {sy, y[22:0]} : {~sy, y[22:0]});
+    wire [23:0] y_eff = (op ? {sy, y[22:0]} : 24'b0);
 
     wire [23:0] x_mag = {1'b0, x[22:0]};
     wire [23:0] y_mag = {1'b0, y_eff[22:0]};
@@ -79,9 +88,7 @@ module adder_subs (
 
     wire final_sign = (x_mag >= y_mag) ? sx : y_eff[23];
 
-    always @(*) begin
-        sr = {final_sign, add_res[22:0]};
-    end
+    assign sr = {final_sign, add_res[22:0]};
 endmodule
 
 // ------------------------------------------------------

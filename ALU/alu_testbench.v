@@ -55,7 +55,7 @@ module alu_tb();
                 S = {1'b0, j[8:0], 14'd0};
 
                 // test add/sub
-                ctl_f = 1;
+                ctl_f = 0;
                 ctl_e = 0;
                 tick;
                 expected = {1'b0, ((i + j) << 14)};
@@ -65,7 +65,7 @@ module alu_tb();
                 end
 
                 // test mult
-                ctl_f = 0;
+                ctl_f = 1;
                 ctl_e = 0;
                 tick;
                 expected = {1'b0, ((i * j) << 14)};
