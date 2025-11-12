@@ -21,7 +21,7 @@ module alu (
 
     wire [23:0] add_out;
     wire [47:0] mult_out;
-    wire [23:0] mult_inv_out;
+    wire [22:0] mult_inv_out;
     wire [23:0] mult_inv_out_sign;
     wire [23:0] inv_out;
     wire [23:0] Y;
@@ -29,12 +29,14 @@ module alu (
 
     wire sign_r = R[23];
     wire sign_s = S[23];
-    wire sign_xor = sign_r ^ sign_s;
+    
+    wire sign_xor;
+    wire zero_check = (~|R[22:0] || ~|S[22:0]); // reduction OR for negative 0 handling
 
     adder_subs u_add (
         .x(R),
         .y(S),
-        .op(~ctl_f),
+        .op(ctl_f),
         .sr(add_out)
     );
 
@@ -51,12 +53,14 @@ module alu (
         .i(inv_out),
         .rdy(inv_rdy)
     );
+    
+    assign sign_xor = zero_check ? 0 : sign_r ^ sign_s; // handle negative 0s
 
     assign ctrl_nand = ~(ctl_e & ctl_f);
     assign Y = ctrl_nand ? S : inv_out; // mux for Y input
 
-    assign mult_inv_out = ctl_e ? inv_out : mult_out[47:24]; // mux for mult vs inv
-    assign sign_out = ctrl_nand ? sign_xor : sign_s; // mux for sign output
+    assign mult_inv_out = ctl_e ? inv_out : mult_out[36:14]; // mux for mult vs inv
+    assign sign_out = ctrl_nand ? sign_xor : sign_r; // mux for sign output
     assign mult_inv_out_sign = {sign_out, mult_inv_out}; // combine with sign mux
 
     assign result = ctl_f ? mult_inv_out_sign : add_out; // mux for add vs mult/inv
@@ -71,24 +75,38 @@ module adder_subs (
     input  wire [23:0] x,
     input  wire [23:0] y,
     input  wire        op,
-    output wire  [23:0] sr
+    output wire [23:0] sr
 );
-    wire sx = x[23];
-    wire sy = y[23];
-    wire [23:0] y_eff = (op ? {sy, y[22:0]} : 24'b0);
+    // Split sign and magnitude
+    wire sign_x = x[23];
+    wire sign_y = y[23];
+    wire [22:0] mag_x = x[22:0];
+    wire [22:0] mag_y = y[22:0];
 
-    wire [23:0] x_mag = {1'b0, x[22:0]};
-    wire [23:0] y_mag = {1'b0, y_eff[22:0]};
+    // Effective sign of Y after subtract
+    wire eff_sign_y = op ? ~sign_y : sign_y;
 
-    wire add_sign = sx ^ y_eff[23];
+    // Determine if signs match
+    wire same_sign = (sign_x == eff_sign_y);
 
-    wire [23:0] add_res = add_sign ?
-                          (x_mag > y_mag ? {1'b0, x_mag[22:0] - y_mag[22:0]} : {1'b0, y_mag[22:0] - x_mag[22:0]}) :
-                          ({1'b0, x_mag[22:0] + y_mag[22:0]});
+    // Add magnitudes if same sign
+    wire [22:0] add_mag = mag_x + mag_y;
 
-    wire final_sign = (x_mag >= y_mag) ? sx : y_eff[23];
+    // Subtract magnitudes if opposite sign
+    wire [22:0] sub_mag = (mag_x == mag_y) ? 0 :
+                           (mag_x > mag_y) ? (mag_x - mag_y) : (mag_y - mag_x);
 
-    assign sr = {final_sign, add_res[22:0]};
+    // Determine result sign
+    wire sign_res = same_sign ? sign_x :
+                     (mag_x == mag_y) ? 1'b0 : // +0 for cancellation
+                     (mag_x > mag_y) ? sign_x : eff_sign_y;
+
+    // Select magnitude based on sign match
+    wire [22:0] mag_res = same_sign ? add_mag : sub_mag;
+
+    // Combine sign + magnitude into S9.14
+    assign sr = {sign_res, mag_res};
+
 endmodule
 
 // ------------------------------------------------------
@@ -105,14 +123,10 @@ module multiplier (
     wire [22:0] mag_x = x[22:0];
     wire [22:0] mag_y = y[22:0];
 
-    // Multiply magnitudes (full precision)
-    wire [45:0] full_product = mag_x * mag_y;
+    // Multiply magnitudes (full precision 23x23 → 46 bits)
+    wire [45:0] raw_product = mag_x * mag_y;
 
-    // Scale back to Q9.14 by shifting right 14 bits
-    wire [31:0] scaled = full_product >> 14;
-
-    // Combine sign and scaled magnitude (24-bit result)
-    assign m = { (sign_x ^ sign_y), scaled[22:0], 24'b0 };
+    assign m = raw_product;
 endmodule
 
 // ------------------------------------------------------
@@ -128,23 +142,20 @@ module multiplicative_inverse (
     reg [4:0] bit_pos;
 
     always @(posedge clk or posedge rst) begin
-        $display("Inverse Step: m=%h, i=%h, bit_pos=%d", m, i, bit_pos);
-
         if (rst) begin
-            i <= 24'b0;
-            bit_pos <= 23;
+            i <= 24'hFFFFFF; //start with all 1s
+            bit_pos <= 22; //start at MSB - not sign
             rdy <= 0;
         end else begin
-            if (bit_pos == 0) begin
-                rdy <= 1;
-            end else begin
-                i[bit_pos] <= 1'b1;
-                if (m > 24'h004000) begin // 1 in Q9.14
-                    i[bit_pos] <= 1'b0;
+            if (bit_pos != 0) begin
+                if (m[36:14] > 24'h004000) begin //if m is greater than 1
+                    i[bit_pos] <= 1'b0; //decrease i by half
                 end
-                bit_pos <= bit_pos - 1;
+                bit_pos <= bit_pos - 1; //move to next bit
+            end else begin //if gone through all bits, end
+                rdy <= 1'b1; //done
+            end
         end
     end
-end
 
 endmodule

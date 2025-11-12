@@ -49,6 +49,19 @@ module tb_alu_mult_inv;
             while (!cont) @(posedge clk);
         end
     endtask
+    
+    function [23:0] to_s9_14;
+        input integer val; // e.g., -2, 1, etc.
+        reg sign;
+        reg [22:0] mag;
+        begin
+            sign = (val < 0);
+            if (val < 0)
+                val = -val;  // take absolute value
+            mag = val << 14; // scale by 2^14
+            to_s9_14 = {sign, mag};
+        end
+    endfunction
 
     initial begin
         clk = 0;
@@ -61,10 +74,10 @@ module tb_alu_mult_inv;
         $display("Starting ALU multiplicative inverse test...");
 
         // Example test cases: R, then inverse
-        test_inv(24'h004000); // 1.0 -> 1.0
-        test_inv(24'h008000); // 2.0 -> 0.5
-        //test_inv(24'h008000); // 2.0 -> 0.5
-        //test_inv(24'h004000); // 
+        test_inv(1); // 1.0 -> 1.0
+        test_inv(2); // 2.0 -> 0.5
+        test_inv(8); // 8.0 -> 0.125
+        test_inv(-8); // -8.0 -> -0.125
 
         if (passed)
             $display("Test Completed without Errors! :)");
@@ -76,9 +89,14 @@ module tb_alu_mult_inv;
 
     // Task for testing a pair of R and S
     task test_inv;
-        input [23:0] r_val;
-        reg [47:0] product;
+        input integer r_decimal;
+        reg [23:0] r_val;
+        real result_real;
+        integer signed_mag;
+        integer signed_val;
         begin
+            r_val = to_s9_14(r_decimal); //convert to S9.14
+            $display("r_val=%b", r_val);
             rst = 1;
             #20 rst = 0;
             R = r_val;
@@ -86,8 +104,13 @@ module tb_alu_mult_inv;
             @(posedge clk);
             while (!cont) @(posedge clk);
 
+
+            
+            signed_mag = result[22:0];  // magnitude
+            signed_val = (result[23]) ? -signed_mag : signed_mag;
+            result_real = signed_val / 16384.0; // scale by 2^14
             // Compare ALU result
-            $display("INV Result: R=%h -> got %h", R, result);
+            $display("INV Result: R=%d -> got %b (%.6f)", r_decimal, result, result_real);
 
         end
     endtask
