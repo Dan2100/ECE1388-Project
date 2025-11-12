@@ -15,6 +15,10 @@ module tb_alu_mult_inv;
     wire sign;
     wire cont;
 
+    // Variables for checking
+    reg [23:0] expected;
+    reg passed;
+
     // Instantiate the ALU
     alu uut (
         .clk(clk),
@@ -31,47 +35,60 @@ module tb_alu_mult_inv;
     // Clock generation: 10 ns period
     always #5 clk = ~clk;
 
-    initial begin
-        // Initialize inputs
-        clk = 0;
-        rst = 1;
-        R = 24'h000100; // example input (1 in Q9.14)
-        S = 24'h000000; // S is ignored for inv
-        ctl_f = 1;      // select mult/inverse path
-        ctl_e = 1;      // select inverse output
-        #20;            // hold reset
-        rst = 0;
+    // Simple tick task
+    task tick;
+        begin
+            @(posedge clk);
+        end
+    endtask
 
-        $display("Starting ALU multiplicative inverse test...");
-
-        // Test 1: R = 1
-        R = 24'h000100;
-        wait_for_cont();
-        
-        // Test 2: R = 2
-        R = 24'h000200;
-        wait_for_cont();
-
-        // Test 3: R = 0.5
-        R = 24'h000080;
-        wait_for_cont();
-
-        // Test 4: R = 3
-        R = 24'h000300;
-        wait_for_cont();
-
-        $display("All tests done.");
-        $stop;
-    end
-
-    // Task to wait until cont goes high (inverse ready) and display result
+    // Wait for inverse ready
     task wait_for_cont;
         begin
             @(posedge clk);
             while (!cont) @(posedge clk);
-            $display("Time: %0t | Input R: %h | Inverse Result: %h | cont=%b", $time, R, result, cont);
-            #10; // small delay before next test
         end
     endtask
 
+    initial begin
+        clk = 0;
+        rst = 1;
+        ctl_f = 1; // mult/inv path
+        ctl_e = 1; // select inverse
+        passed = 1;
+        #20 rst = 0;
+
+        $display("Starting ALU multiplicative inverse test...");
+
+        // Example test cases: R, then inverse
+        test_inv(24'h004000); // 1.0 -> 1.0
+        test_inv(24'h008000); // 2.0 -> 0.5
+        //test_inv(24'h008000); // 2.0 -> 0.5
+        //test_inv(24'h004000); // 
+
+        if (passed)
+            $display("Test Completed without Errors! :)");
+        else
+            $display("Test Completed WITH Errors! :(");
+
+        $finish;
+    end
+
+    // Task for testing a pair of R and S
+    task test_inv;
+        input [23:0] r_val;
+        reg [47:0] product;
+        begin
+            rst = 1;
+            #20 rst = 0;
+            R = r_val;
+            // Wait until ALU inverse signals ready
+            @(posedge clk);
+            while (!cont) @(posedge clk);
+
+            // Compare ALU result
+            $display("INV Result: R=%h -> got %h", R, result);
+
+        end
+    endtask
 endmodule

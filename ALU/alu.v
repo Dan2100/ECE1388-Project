@@ -125,7 +125,7 @@ module multiplicative_inverse (
     output reg  [23:0] i,    // output reciprocal (S9.14, sign-magnitude)
     output reg         rdy
 );
-    reg bit_pos;
+    reg [4:0] bit_pos;
 
     always @(posedge clk or posedge rst) begin
         $display("Inverse Step: m=%h, i=%h, bit_pos=%d", m, i, bit_pos);
