@@ -29,6 +29,9 @@ module alu (
 
     wire sign_r = R[23];
     wire sign_s = S[23];
+
+    wire ctl_nand;
+    wire sign_out;
     
     wire sign_xor;
     wire zero_check = (~|R[22:0] || ~|S[22:0]); // reduction OR for negative 0 handling
@@ -56,15 +59,15 @@ module alu (
     
     assign sign_xor = zero_check ? 0 : sign_r ^ sign_s; // handle negative 0s
 
-    assign ctrl_nand = ~(ctl_e & ctl_f);
-    assign Y = ctrl_nand ? S : inv_out; // mux for Y input
+    assign ctl_nand = ~(ctl_e & ctl_f);
+    assign Y = ctl_nand ? S : inv_out; // mux for Y input
 
     assign mult_inv_out = ctl_e ? inv_out : mult_out[36:14]; // mux for mult vs inv
-    assign sign_out = ctrl_nand ? sign_xor : sign_r; // mux for sign output
+    assign sign_out = ctl_nand ? sign_xor : sign_r; // mux for sign output
     assign mult_inv_out_sign = {sign_out, mult_inv_out}; // combine with sign mux
 
     assign result = ctl_f ? mult_inv_out_sign : add_out; // mux for add vs mult/inv
-    assign cont = inv_rdy | ctrl_nand; // continue signal for inv only
+    assign cont = inv_rdy | ctl_nand; // continue signal for inv only
 
 endmodule
 
